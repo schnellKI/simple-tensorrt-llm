@@ -66,6 +66,9 @@ fi
 HF_MODEL_DIR="$1"
 MODEL_NAME="$2"
 
+# Get the directory where this script is located
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 if [ ! -d "$HF_MODEL_DIR" ]; then
     echo "Error: Hugging Face model directory not found: ${HF_MODEL_DIR}"
     usage
@@ -77,20 +80,20 @@ fi
 : ${TP_SIZE:=1}             # Tensor Parallelism size
 : ${PP_SIZE:=1}             # Pipeline Parallelism size
 : ${MAX_BEAM_WIDTH:=1}      # Maximum beam width for beam search
-: ${MAX_ENCODER_INPUT_LEN:=1024} # Maximum input length for the encoder
-: ${MAX_SEQ_LEN:=1024}      # Maximum total sequence length (input + output) for the decoder
+: ${MAX_ENCODER_INPUT_LEN:=512} # Maximum input length for the encoder
+: ${MAX_SEQ_LEN:=512}      # Maximum total sequence length (input + output) for the decoder
 : ${MAX_BATCH_SIZE:=128}    # Maximum batch size for inference engines
 
 # --- Derived Variables ---
 GPU_ARCH=$(get_gpu_arch)
 WORLD_SIZE=$((TP_SIZE * PP_SIZE))
+MAX_NUM_TOKENS=$((MAX_SEQ_LEN * MAX_BATCH_SIZE))
 # Include GPU Arch in the path
 TRT_MODEL_DIR="tmp/trt_models/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
-TRT_ENGINE_DIR="tmp/trt_engines/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
+TRT_ENGINE_DIR="tmp/trt_engines2/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
 DECODER_MAX_INPUT_LEN=1 # Default decoder start token length for enc-dec models
 
 # Optimization profiles for batch size (min, opt, max)
-OPT_BATCH_SIZES="1,$(($MAX_BATCH_SIZE / 2)),${MAX_BATCH_SIZE}"
 
 # --- Helper Functions ---
 create_dirs() {
@@ -107,14 +110,13 @@ convert_checkpoint() {
     # Check if config files exist in the *specific* target directory
     if [ ! -f "${TRT_MODEL_DIR}/encoder/config.json" ] || [ ! -f "${TRT_MODEL_DIR}/decoder/config.json" ]; then
         # Ensure the convert_checkpoint script path is correct relative to this script's location
-        # Assuming this script is in trt/t5/ and convert_checkpoint.py is in examples/models/core/
-        local convert_script_path="../../examples/models/core/convert_checkpoint.py"
+        local convert_script_path="${SCRIPT_DIR}/convert_checkpoint.py"
         if [ ! -f "$convert_script_path" ]; then
             echo "Error: convert_checkpoint.py not found at expected path: $convert_script_path"
             echo "Please ensure the script is run from the correct directory or adjust the path."
             exit 1
         fi
-        python "$convert_script_path" \
+        python3 "$convert_script_path" \
             --model_type "${MODEL_TYPE}" \
             --model_dir "${HF_MODEL_DIR}" \
             --output_dir "${TRT_MODEL_DIR}" \
@@ -137,7 +139,7 @@ build_encoder_engine() {
             --moe_plugin disable \
             --max_beam_width ${MAX_BEAM_WIDTH} \
             --max_batch_size ${MAX_BATCH_SIZE} \
-            --opt_batch_size "${OPT_BATCH_SIZES}" \
+            --max_num_tokens ${MAX_NUM_TOKENS} \
             --max_input_len ${MAX_ENCODER_INPUT_LEN} \
             --gemm_plugin "${INFERENCE_PRECISION}" \
             --bert_attention_plugin "${INFERENCE_PRECISION}" \
@@ -160,7 +162,6 @@ build_decoder_engine() {
             --moe_plugin disable \
             --max_beam_width ${MAX_BEAM_WIDTH} \
             --max_batch_size ${MAX_BATCH_SIZE} \
-            --opt_batch_size "${OPT_BATCH_SIZES}" \
             --max_input_len ${DECODER_MAX_INPUT_LEN} \
             --max_seq_len ${MAX_SEQ_LEN} \
             --max_encoder_input_len ${MAX_ENCODER_INPUT_LEN} \
@@ -195,7 +196,6 @@ echo "Max Decoder Seq Len: ${MAX_SEQ_LEN}"
 echo "Max Batch Size:      ${MAX_BATCH_SIZE}"
 echo "TRT Model Dir:       ${TRT_MODEL_DIR}"
 echo "TRT Engine Dir:      ${TRT_ENGINE_DIR}"
-echo "Optimization Batch:  ${OPT_BATCH_SIZES}"
 echo "----------------------------------------"
 
 # 1. Ensure output directories exist
@@ -214,3 +214,7 @@ echo "----------------------------------------"
 echo "T5 Conversion and Build Process Completed Successfully!"
 echo "Engines are located in: ${TRT_ENGINE_DIR}"
 echo "----------------------------------------"
+
+echo ""
+echo "To run inference with the generated engines, use the following command from the project root:"
+echo "python3 run.py --model_name ${MODEL_NAME} --engine_dir ${TRT_ENGINE_DIR} --hf_model_dir ${HF_MODEL_DIR}"
