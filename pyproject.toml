@@ -1,0 +1,161 @@
+# ========
+# = Lint =
+# ========
+
+[tool.black]
+line_length = 100
+preview = true
+
+[tool.ruff]
+line-length = 100
+lint.select = ["ALL"]
+lint.ignore = [
+    # Ignore these rules which do not match our style
+    "COM812",
+    "D107",
+    "D202",
+    "D203",
+    "D213",
+    "D413",
+    "D407",
+    "D416",
+    "EM101",
+    "EM102",
+    "FIX002",
+    "I001",
+    "TD002",
+    "TD003",
+    "TRY003",
+    # Consider in future
+    # TODO: Improve type annotations
+    "ANN401",
+    # TODO: Don't use exec, xml, insecure temp files
+    "S102",
+    "S314",
+    "S108",
+    # TODO: Prefer absolute imports
+    "TID252",
+    # TODO: Fix after refactoring repo organization
+    "INP001",
+]
+target-version = "py312"
+src = ["trt"]
+
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN201",
+    "ANN202",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "PLR2004",
+    "S101",
+    "SLF001",
+]
+"client/primer_tritonclient/testing/*" = ["S101"]
+"model_repo/*" = [
+    # Don't add extra `__init__.py` files
+    "INP001",
+    # Allow commented out code as we use it to document the code
+    "ERA001",
+    # TODO: Enforce docstrings
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    # TODO: Enforce type hinting
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN201",
+    "ANN204",
+    # TODO: Avoid unused arguments
+    "ARG002",
+    # TODO: Avoid magic values
+    "PLR2004",
+    # TODO: Avoid too many arguments
+    "PLR0913",
+]
+"model_utils/*" = ["INP001"]
+"scripts/*" = ["D104", "INP001", "T201"]
+"scripts/dev/*" = [
+    "C901",
+    "D101",
+    "D102",
+    "D103",
+    "N803",
+    "N806",
+    "PTH",
+    "SLF001",
+    "T201",
+    "ANN202",
+    "PLR2004",
+    "ANN001",
+]
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[tool.mypy]
+ignore_missing_imports = true
+no_error_summary = true
+strict = true
+exclude = [
+    # FIXME: Figure out how to check typing in model_repo (Fix: Duplicate module named "model")
+    ".*model_repo/.*/.*/model.py",
+    "model_repo/triton_python_backend_utils.py",
+    ".*scripts/dev/.*",
+    ".*tests/.*",
+]
+
+
+# =========
+# = Tests =
+# =========
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["."]
+concurrency = ["gevent", "multiprocessing", "thread"]
+
+# =================
+# = Project Setup =
+# =================
+
+[project]
+name = "trt" # TODO: Replace with your actual project name
+version = "0.1.0" # TODO: Replace with your actual project version
+dependencies = [
+    # Add your main project dependencies here
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "coverage[toml]", # [toml] extra needed for concurrency settings
+    "gevent",
+]
+
+[tool.uv.sources]
+tensorrt_llm = { index = "nvidia" }
+
+[[tool.uv.index]]
+# Add the NVIDIA PyPI index to install triton and tensorrt
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+default = false

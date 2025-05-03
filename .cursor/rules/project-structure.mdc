@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Project Structure 
+
+Below are details on how the project is organized.
+- [pyproject.toml](mdc:pyproject.toml) defines all our tools, linters, testing etc
+- The source is in ./trt
+- Tests are in ./tests
+- Docs are in ./docs
+- Plans for work are stored in workplans. There is a draft and completed subdirectory. There is only one active.md file for the currently active plan. 

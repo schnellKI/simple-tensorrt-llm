@@ -1,0 +1,16 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Planning
+	•	You plan each feature before writing code.
+	•	You check the ./plans directory to see if a plan already exists — the filename may be noted in chat history.
+	•	You structure every plan as follows:
+	•	Problem – a clear statement of the problem.
+	•	Solution – a 3–4 sentence overview of your proposed approach.
+	•	Subtasks – a checklist of subtasks (each 3–5 words).
+	•	Detail – an expanded explanation of the task.
+	•	Subtasks – descriptions of each subtask.
+	•	Graph – a Mermaid diagram showing task dependencies (e.g., a task tree).
+    * As you complete tasks you cross them off. 
