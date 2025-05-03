@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Exit immediately if a command exits with a non-zero status.
-set -e
+set -euo pipefail
 
 # --- Helper Functions ---
 
@@ -19,19 +19,61 @@ usage() {
     echo "  TP_SIZE (1):                 Tensor Parallelism size."
     echo "  PP_SIZE (1):                 Pipeline Parallelism size."
     echo "  MAX_BEAM_WIDTH (1):          Maximum beam width for search."
-    echo "  MAX_ENCODER_INPUT_LEN (1024): Max encoder input sequence length."
-    echo "  MAX_SEQ_LEN (1024):          Max decoder total sequence length (input + output)."
+    echo "  MAX_ENCODER_INPUT_LEN (512): Max encoder input sequence length."
+    echo "  MAX_SEQ_LEN (512):          Max decoder total sequence length (input + output)."
     echo "  MAX_BATCH_SIZE (128):        Max batch size for engine build."
+    echo "  BASE_DIR (/tmp/trt_models):  Base directory for TensorRT models."
+    echo "  ENGINES_BASE_DIR (/tmp/trt_engines2): Base directory for TensorRT engines."
+    echo "  TRITON_REPO_NAME (enc_dec_ifb): Name for the Triton repository folder."
     exit 1
 }
 
+# Check if arguments are provided
+if [ $# -lt 2 ]; then
+    usage
+fi
+
+HF_MODEL_DIR="$1"
+MODEL_NAME="$2"
+
+# Get the directory where this script is located
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+
+# --- Configuration Variables (Defaults can be overridden by environment variables) ---
+: "${MODEL_TYPE:=t5}"                # Model type ("t5")
+: "${INFERENCE_PRECISION:=bfloat16}" # Inference precision ("float16", "bfloat16", "float32")
+: "${TP_SIZE:=1}"                    # Tensor Parallelism size
+: "${PP_SIZE:=1}"                    # Pipeline Parallelism size
+: "${MAX_BEAM_WIDTH:=1}"             # Maximum beam width for beam search
+: "${MAX_ENCODER_INPUT_LEN:=512}"    # Maximum input length for the encoder
+: "${MAX_SEQ_LEN:=512}"              # Maximum total sequence length (input + output) for the decoder
+: "${MAX_BATCH_SIZE:=128}"           # Maximum batch size for inference engines
+: "${TRITON_REPO_NAME:=enc_dec_ifb}" # Name for the Triton repository folder
+
+# --- Derived Variables ---
+GPU_ARCH=$(get_gpu_arch)
+WORLD_SIZE=$((TP_SIZE * PP_SIZE))
+MAX_NUM_TOKENS=$((MAX_SEQ_LEN * MAX_BATCH_SIZE))
+# Include GPU Arch in the path
+: "${BASE_DIR:=/tmp/trt_models}"           # Base directory for TensorRT models
+: "${ENGINES_BASE_DIR:=/tmp/trt_engines2}" # Base directory for TensorRT engines
+TRT_MODEL_DIR="${BASE_DIR}/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
+TRT_ENGINE_DIR="${ENGINES_BASE_DIR}/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
+TRITON_REPO_DIR="${BASE_DIR}/triton_repos/${MODEL_NAME}/${TRITON_REPO_NAME}"
+DECODER_MAX_INPUT_LEN=1 # Default decoder start token length for enc-dec models
+
+# Optimization profiles for batch size (min, opt, max)
+
+# --- Helper Functions ---
+
 get_gpu_arch() {
-    if ! command -v nvidia-smi &> /dev/null; then
+    if ! command -v nvidia-smi &>/dev/null; then
         echo "Error: nvidia-smi command not found. Cannot determine GPU architecture."
         exit 1
     fi
     # Get the name of the first GPU, replace spaces with underscores
-    local gpu_name=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -n 1 | sed 's/ /_/g')
+    local gpu_name
+    gpu_name=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -n 1 | sed 's/ /_/g')
     if [ -z "$gpu_name" ]; then
         echo "Error: Could not determine GPU name using nvidia-smi."
         exit 1
@@ -57,45 +99,6 @@ get_gpu_arch() {
     fi
 }
 
-
-# --- Argument Parsing ---
-if [ "$#" -ne 2 ]; then
-    usage
-fi
-
-HF_MODEL_DIR="$1"
-MODEL_NAME="$2"
-
-# Get the directory where this script is located
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-if [ ! -d "$HF_MODEL_DIR" ]; then
-    echo "Error: Hugging Face model directory not found: ${HF_MODEL_DIR}"
-    usage
-fi
-
-# --- Configuration Variables (Defaults can be overridden by environment variables) ---
-: ${MODEL_TYPE:="t5"}       # Model type ("t5")
-: ${INFERENCE_PRECISION:="bfloat16"} # Inference precision ("float16", "bfloat16", "float32")
-: ${TP_SIZE:=1}             # Tensor Parallelism size
-: ${PP_SIZE:=1}             # Pipeline Parallelism size
-: ${MAX_BEAM_WIDTH:=1}      # Maximum beam width for beam search
-: ${MAX_ENCODER_INPUT_LEN:=512} # Maximum input length for the encoder
-: ${MAX_SEQ_LEN:=512}      # Maximum total sequence length (input + output) for the decoder
-: ${MAX_BATCH_SIZE:=128}    # Maximum batch size for inference engines
-
-# --- Derived Variables ---
-GPU_ARCH=$(get_gpu_arch)
-WORLD_SIZE=$((TP_SIZE * PP_SIZE))
-MAX_NUM_TOKENS=$((MAX_SEQ_LEN * MAX_BATCH_SIZE))
-# Include GPU Arch in the path
-TRT_MODEL_DIR="tmp/trt_models/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
-TRT_ENGINE_DIR="tmp/trt_engines2/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
-DECODER_MAX_INPUT_LEN=1 # Default decoder start token length for enc-dec models
-
-# Optimization profiles for batch size (min, opt, max)
-
-# --- Helper Functions ---
 create_dirs() {
     echo "Creating directories..."
     # Don't create HF_MODEL_DIR, it's required input
@@ -120,8 +123,8 @@ convert_checkpoint() {
             --model_type "${MODEL_TYPE}" \
             --model_dir "${HF_MODEL_DIR}" \
             --output_dir "${TRT_MODEL_DIR}" \
-            --tp_size ${TP_SIZE} \
-            --pp_size ${PP_SIZE} \
+            --tp_size "${TP_SIZE}" \
+            --pp_size "${PP_SIZE}" \
             --dtype "${INFERENCE_PRECISION}"
     else
         echo "TensorRT-LLM checkpoint already exists in ${TRT_MODEL_DIR}. Skipping conversion."
@@ -137,10 +140,10 @@ build_encoder_engine() {
             --output_dir "${TRT_ENGINE_DIR}/encoder" \
             --paged_kv_cache disable \
             --moe_plugin disable \
-            --max_beam_width ${MAX_BEAM_WIDTH} \
-            --max_batch_size ${MAX_BATCH_SIZE} \
-            --max_num_tokens ${MAX_NUM_TOKENS} \
-            --max_input_len ${MAX_ENCODER_INPUT_LEN} \
+            --max_beam_width "${MAX_BEAM_WIDTH}" \
+            --max_batch_size "${MAX_BATCH_SIZE}" \
+            --max_num_tokens "${MAX_NUM_TOKENS}" \
+            --max_input_len "${MAX_ENCODER_INPUT_LEN}" \
             --gemm_plugin "${INFERENCE_PRECISION}" \
             --bert_attention_plugin "${INFERENCE_PRECISION}" \
             --gpt_attention_plugin "${INFERENCE_PRECISION}" \
@@ -160,25 +163,32 @@ build_decoder_engine() {
             --checkpoint_dir "${TRT_MODEL_DIR}/decoder" \
             --output_dir "${TRT_ENGINE_DIR}/decoder" \
             --moe_plugin disable \
-            --max_beam_width ${MAX_BEAM_WIDTH} \
-            --max_batch_size ${MAX_BATCH_SIZE} \
-            --max_input_len ${DECODER_MAX_INPUT_LEN} \
-            --max_seq_len ${MAX_SEQ_LEN} \
-            --max_encoder_input_len ${MAX_ENCODER_INPUT_LEN} \
+            --max_beam_width "${MAX_BEAM_WIDTH}" \
+            --max_batch_size "${MAX_BATCH_SIZE}" \
+            --max_input_len "${DECODER_MAX_INPUT_LEN}" \
+            --max_seq_len "${MAX_SEQ_LEN}" \
+            --max_encoder_input_len "${MAX_ENCODER_INPUT_LEN}" \
             --gemm_plugin "${INFERENCE_PRECISION}" \
             --bert_attention_plugin "${INFERENCE_PRECISION}" \
             --gpt_attention_plugin "${INFERENCE_PRECISION}" \
             --remove_input_padding enable \
             --multiple_profiles enable \
             --context_fmha disable # T5 relative attention bias not compatible with FMHA
-            # --use_implicit_relative_attention # Add if max_seq_len is very large causing OOM
+        # --use_implicit_relative_attention # Add if max_seq_len is very large causing OOM
     else
         echo "Decoder engine already exists. Skipping build."
     fi
 }
 
-
 # --- Main Script ---
+# --- Argument Parsing ---
+if [ "$#" -ne 2 ]; then
+    usage
+fi
+if [ ! -d "$HF_MODEL_DIR" ]; then
+    echo "Error: Hugging Face model directory not found: ${HF_MODEL_DIR}"
+    usage
+fi
 
 echo "Starting T5 Conversion and Build Process"
 echo "----------------------------------------"
@@ -218,3 +228,8 @@ echo "----------------------------------------"
 echo ""
 echo "To run inference with the generated engines, use the following command from the project root:"
 echo "python3 run.py --model_name ${MODEL_NAME} --engine_dir ${TRT_ENGINE_DIR} --hf_model_dir ${HF_MODEL_DIR}"
+echo ""
+echo "To build a Triton inference server repository with these engines, use the separate script:"
+echo "source $(basename "$0") ${HF_MODEL_DIR} ${MODEL_NAME}"
+echo "./build_triton_repo.sh"
+echo "This will create a Triton repository at: ${TRITON_REPO_DIR}"
