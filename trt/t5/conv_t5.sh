@@ -6,9 +6,10 @@ set -euo pipefail
 # --- Helper Functions ---
 
 usage() {
-    echo "Usage: $0 <hf_model_dir> <model_name> [--engine-load-dir=PATH]"
+    echo "Usage: $0 <hf_model_dir> <model_name> [--engine-load-dir=PATH] [--tokenizer-dir=PATH]"
     echo "Example: $0 ./tmp/hf_models/t5-small t5-small"
     echo "Example with custom engine dir: $0 ./tmp/hf_models/t5-small t5-small --engine-load-dir=/path/to/custom/engines"
+    echo "Example with custom tokenizer dir: $0 ./tmp/hf_models/t5-small t5-small --tokenizer-dir=/path/to/custom/tokenizer"
     echo ""
     echo "Required Arguments:"
     echo "  hf_model_dir: Path to the directory containing the Hugging Face model files (e.g., downloaded via git clone)."
@@ -16,6 +17,7 @@ usage() {
     echo ""
     echo "Optional Arguments:"
     echo "  --engine-load-dir=PATH: Use a custom engine directory instead of the default."
+    echo "  --tokenizer-dir=PATH:   Use a custom tokenizer directory instead of the HF model directory."
     echo ""
     echo "Optional Environment Variables (Defaults):"
     echo "  MODEL_TYPE (t5):             Model architecture type."
@@ -52,10 +54,14 @@ parse_args() {
     
     # Check for additional arguments
     CUSTOM_ENGINE_DIR=""
+    CUSTOM_TOKENIZER_DIR=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --engine-load-dir=*)
                 CUSTOM_ENGINE_DIR="${1#*=}"
+                ;;
+            --tokenizer-dir=*)
+                CUSTOM_TOKENIZER_DIR="${1#*=}"
                 ;;
             --help|-h)
                 usage
@@ -265,9 +271,13 @@ echo "python3 run.py --model_name ${MODEL_NAME} --engine_dir ${TRT_ENGINE_DIR} -
 echo ""
 echo "To build a Triton inference server repository with these engines, use the separate script:"
 echo "source $(basename "$0") ${HF_MODEL_DIR} ${MODEL_NAME}"
+# Construct build_triton_repo.sh command with appropriate parameters
+build_cmd="./build_triton_repo.sh"
 if [ -n "${CUSTOM_ENGINE_DIR:-}" ]; then
-    echo "./build_triton_repo.sh --engine-load-dir=${CUSTOM_ENGINE_DIR}"
-else
-    echo "./build_triton_repo.sh"
+    build_cmd+=" --engine-load-dir=${CUSTOM_ENGINE_DIR}"
 fi
+if [ -n "${CUSTOM_TOKENIZER_DIR:-}" ]; then
+    build_cmd+=" --tokenizer-dir=${CUSTOM_TOKENIZER_DIR}"
+fi
+echo "$build_cmd"
 echo "This will create a Triton repository at: ${TRITON_REPO_DIR}"

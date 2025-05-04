@@ -14,6 +14,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --engine-load-dir=PATH  Override the TRT_ENGINE_DIR with a custom engine directory"
+    echo "  --tokenizer-dir=PATH    Override the HF_MODEL_DIR for tokenizer paths"
     echo ""
     echo "Required Environment Variables:"
     echo "  SCRIPT_DIR:          Directory containing repo_template and tools"
@@ -30,6 +31,8 @@ usage() {
     echo "     ./build_triton_repo.sh"
     echo "     or with custom engine directory:"
     echo "     ./build_triton_repo.sh --engine-load-dir=/path/to/engines"
+    echo "     or with custom tokenizer directory:"
+    echo "     ./build_triton_repo.sh --tokenizer-dir=/path/to/tokenizer"
     echo ""
     echo "Or source conv_t5.sh and run this script:"
     echo "  source ./conv_t5.sh <hf_model_dir> <model_name>"
@@ -40,6 +43,7 @@ usage() {
 # Parse command line arguments
 parse_args() {
     local custom_engine_dir=""
+    local custom_tokenizer_dir=""
     
     # Parse command line arguments
     for arg in "$@"; do
@@ -52,6 +56,14 @@ parse_args() {
                     export TRT_ENGINE_DIR="$custom_engine_dir"
                 fi
                 ;;
+            --tokenizer-dir=*)
+                custom_tokenizer_dir="${arg#*=}"
+                # Override HF_MODEL_DIR for tokenizer if custom tokenizer directory is provided
+                if [ -n "$custom_tokenizer_dir" ]; then
+                    echo "Using custom tokenizer directory: $custom_tokenizer_dir"
+                    export TOKENIZER_DIR="$custom_tokenizer_dir"
+                fi
+                ;;
             --help|-h)
                 usage
                 ;;
@@ -60,6 +72,11 @@ parse_args() {
                 ;;
         esac
     done
+    
+    # If no custom tokenizer directory was provided, use HF_MODEL_DIR as default
+    if [ -z "${TOKENIZER_DIR:-}" ]; then
+        export TOKENIZER_DIR="$HF_MODEL_DIR"
+    fi
 }
 
 # Verify that required environment variables are set
@@ -87,6 +104,7 @@ build_triton_repo() {
     echo "Building Triton repository for the model..."
     echo "Triton repository will be created at: ${TRITON_REPO_DIR}"
     echo "Using engine directory: ${TRT_ENGINE_DIR}"
+    echo "Using tokenizer directory: ${TOKENIZER_DIR}"
 
     if [ ! -f "${fill_template_script}" ]; then
         echo "Error: fill_template.py script not found at ${fill_template_script}"
@@ -106,7 +124,7 @@ build_triton_repo() {
 
     # Set environment variables for template filling
     local ENGINE_PATH="${TRT_ENGINE_DIR}"
-    local HF_MODEL_PATH="${HF_MODEL_DIR}"
+    local HF_MODEL_PATH="${TOKENIZER_DIR}"
 
     # Fill templates for different components
     python3 "${fill_template_script}" -i "${TRITON_REPO_DIR}/tensorrt_llm/config.pbtxt" \

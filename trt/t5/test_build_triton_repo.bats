@@ -101,3 +101,53 @@ function setup() {
     assert_success
     assert_output --partial "string_value: \"${EXPECTED_ENCODER_DIR}\""
 }
+
+@test "default_tokenizer_dir_in_preprocessing" {
+    # Check that the tokenizer_dir parameter in preprocessing/config.pbtxt points to the default HF model directory
+    run ./build_triton_repo.sh ${HF_MODEL_DIR} t5-small
+    assert_success
+    
+    # Check the tokenizer_dir parameter in preprocessing/config.pbtxt
+    run grep -A2 "tokenizer_dir" ${TRITON_REPO_DIR}/preprocessing/config.pbtxt
+    assert_success
+    assert_output --partial "string_value: \"${HF_MODEL_DIR}\""
+}
+
+@test "default_tokenizer_dir_in_postprocessing" {
+    # Check that the tokenizer_dir parameter in postprocessing/config.pbtxt points to the default HF model directory
+    run ./build_triton_repo.sh ${HF_MODEL_DIR} t5-small
+    assert_success
+    
+    # Check the tokenizer_dir parameter in postprocessing/config.pbtxt
+    run grep -A2 "tokenizer_dir" ${TRITON_REPO_DIR}/postprocessing/config.pbtxt
+    assert_success
+    assert_output --partial "string_value: \"${HF_MODEL_DIR}\""
+}
+
+@test "custom_tokenizer_dir_in_preprocessing" {
+    # Test with a custom tokenizer directory
+    export CUSTOM_TOKENIZER_DIR="${BATS_TMPDIR}/custom_tokenizer"
+    
+    # Run the build_triton_repo script with a custom tokenizer directory
+    run ./build_triton_repo.sh --tokenizer-dir="${CUSTOM_TOKENIZER_DIR}" ${HF_MODEL_DIR} t5-small
+    assert_success
+    
+    # Check the tokenizer_dir parameter in preprocessing/config.pbtxt
+    run grep -A2 "tokenizer_dir" ${TRITON_REPO_DIR}/preprocessing/config.pbtxt
+    assert_success
+    assert_output --partial "string_value: \"${CUSTOM_TOKENIZER_DIR}\""
+}
+
+@test "custom_tokenizer_dir_in_postprocessing" {
+    # Test with a custom tokenizer directory
+    export CUSTOM_TOKENIZER_DIR="${BATS_TMPDIR}/custom_tokenizer"
+    
+    # Run the build_triton_repo script with a custom tokenizer directory
+    run ./build_triton_repo.sh --tokenizer-dir="${CUSTOM_TOKENIZER_DIR}" ${HF_MODEL_DIR} t5-small
+    assert_success
+    
+    # Check the tokenizer_dir parameter in postprocessing/config.pbtxt
+    run grep -A2 "tokenizer_dir" ${TRITON_REPO_DIR}/postprocessing/config.pbtxt
+    assert_success
+    assert_output --partial "string_value: \"${CUSTOM_TOKENIZER_DIR}\""
+}
