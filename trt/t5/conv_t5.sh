@@ -6,12 +6,16 @@ set -euo pipefail
 # --- Helper Functions ---
 
 usage() {
-    echo "Usage: $0 <hf_model_dir> <model_name>"
+    echo "Usage: $0 <hf_model_dir> <model_name> [--engine-load-dir=PATH]"
     echo "Example: $0 ./tmp/hf_models/t5-small t5-small"
+    echo "Example with custom engine dir: $0 ./tmp/hf_models/t5-small t5-small --engine-load-dir=/path/to/custom/engines"
     echo ""
     echo "Required Arguments:"
     echo "  hf_model_dir: Path to the directory containing the Hugging Face model files (e.g., downloaded via git clone)."
     echo "  model_name:   A name for the model used in output paths (e.g., t5-small, flan-t5-large)."
+    echo ""
+    echo "Optional Arguments:"
+    echo "  --engine-load-dir=PATH: Use a custom engine directory instead of the default."
     echo ""
     echo "Optional Environment Variables (Defaults):"
     echo "  MODEL_TYPE (t5):             Model architecture type."
@@ -28,16 +32,48 @@ usage() {
     exit 1
 }
 
-# Check if arguments are provided
-if [ $# -lt 2 ]; then
-    usage
-fi
-
-HF_MODEL_DIR="$1"
-MODEL_NAME="$2"
+# Parse command line arguments
+parse_args() {
+    # Need at least two arguments
+    if [ $# -lt 2 ]; then
+        usage
+    fi
+    
+    # Set the first two arguments
+    HF_MODEL_DIR="$1"
+    MODEL_NAME="$2"
+    shift 2
+    
+    # Check if HF_MODEL_DIR exists
+    if [ ! -d "$HF_MODEL_DIR" ]; then
+        echo "Error: Hugging Face model directory not found: ${HF_MODEL_DIR}"
+        usage
+    fi
+    
+    # Check for additional arguments
+    CUSTOM_ENGINE_DIR=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --engine-load-dir=*)
+                CUSTOM_ENGINE_DIR="${1#*=}"
+                ;;
+            --help|-h)
+                usage
+                ;;
+            *)
+                echo "Error: Unknown argument: $1"
+                usage
+                ;;
+        esac
+        shift
+    done
+}
 
 # Get the directory where this script is located
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+
+# Parse command line arguments
+parse_args "$@"
 
 # --- Configuration Variables (Defaults can be overridden by environment variables) ---
 : "${MODEL_TYPE:=t5}"                # Model type ("t5")
@@ -61,6 +97,12 @@ TRT_MODEL_DIR="${BASE_DIR}/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WO
 TRT_ENGINE_DIR="${ENGINES_BASE_DIR}/${MODEL_NAME}/${GPU_ARCH}/${INFERENCE_PRECISION}/${WORLD_SIZE}-gpu"
 TRITON_REPO_DIR="${BASE_DIR}/triton_repos/${MODEL_NAME}/${TRITON_REPO_NAME}"
 DECODER_MAX_INPUT_LEN=1 # Default decoder start token length for enc-dec models
+
+# Use custom engine directory if provided
+if [ -n "${CUSTOM_ENGINE_DIR:-}" ]; then
+    TRT_ENGINE_DIR="${CUSTOM_ENGINE_DIR}"
+    echo "Using custom engine directory: ${TRT_ENGINE_DIR}"
+fi
 
 # Optimization profiles for batch size (min, opt, max)
 
@@ -181,14 +223,6 @@ build_decoder_engine() {
 }
 
 # --- Main Script ---
-# --- Argument Parsing ---
-if [ "$#" -ne 2 ]; then
-    usage
-fi
-if [ ! -d "$HF_MODEL_DIR" ]; then
-    echo "Error: Hugging Face model directory not found: ${HF_MODEL_DIR}"
-    usage
-fi
 
 echo "Starting T5 Conversion and Build Process"
 echo "----------------------------------------"
@@ -231,5 +265,9 @@ echo "python3 run.py --model_name ${MODEL_NAME} --engine_dir ${TRT_ENGINE_DIR} -
 echo ""
 echo "To build a Triton inference server repository with these engines, use the separate script:"
 echo "source $(basename "$0") ${HF_MODEL_DIR} ${MODEL_NAME}"
-echo "./build_triton_repo.sh"
+if [ -n "${CUSTOM_ENGINE_DIR:-}" ]; then
+    echo "./build_triton_repo.sh --engine-load-dir=${CUSTOM_ENGINE_DIR}"
+else
+    echo "./build_triton_repo.sh"
+fi
 echo "This will create a Triton repository at: ${TRITON_REPO_DIR}"

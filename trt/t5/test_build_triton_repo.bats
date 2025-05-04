@@ -3,7 +3,7 @@ load "${TEST_BREW_PREFIX}/lib/bats-support/load.bash"
 load "${TEST_BREW_PREFIX}/lib/bats-assert/load.bash"
 load "${TEST_BREW_PREFIX}/lib/bats-file/load.bash"
 # Test the conversion of T5 models to TensorRT
-function setup_file() {
+function setup() {
     export BATS_TMPDIR="$(temp_make)"
     export HF_MODEL_DIR="${BATS_TMPDIR}/hf_models"
     export SCRIPT_DIR="$(pwd)"
@@ -49,7 +49,7 @@ function setup_file() {
     
 }
 
-@test "tensorrt_llm_engine_dirs" {
+@test "tensorrt_llm_default_engine_dirs" {
     # The default fill_template assumes it run inside the triton container, which is maybe correct. 
     # But if we ran it on the host, we need to allow the user to set where the engine files are stored.
     # The template has two sections that look like this, and we need to check that the values are set correctly.
@@ -77,6 +77,27 @@ function setup_file() {
     assert_output --partial "string_value: \"${EXPECTED_DECODER_DIR}\""
 
     run grep -A 2  "encoder_model_path" ${TRITON_REPO_DIR}/tensorrt_llm/config.pbtxt 
+    assert_success
+    assert_output --partial "string_value: \"${EXPECTED_ENCODER_DIR}\""
+}
+
+@test "tensorrt_llm_custom_engine_dirs" {
+    # Create a custom engine directory path
+    export CUSTOM_ENGINE_DIR="${BATS_TMPDIR}/custom_engines"
+    EXPECTED_DECODER_DIR="${CUSTOM_ENGINE_DIR}/decoder"
+    EXPECTED_ENCODER_DIR="${CUSTOM_ENGINE_DIR}/encoder"
+    
+    # Run the build_triton_repo script with the custom engine directory
+    run ./build_triton_repo.sh --engine-load-dir="${CUSTOM_ENGINE_DIR}" ${HF_MODEL_DIR} t5-small
+    assert_success
+    
+    # Check that the gpt_model_path is set to the custom decoder directory
+    run grep -A2 "gpt_model_path" ${TRITON_REPO_DIR}/tensorrt_llm/config.pbtxt 
+    assert_success
+    assert_output --partial "string_value: \"${EXPECTED_DECODER_DIR}\""
+    
+    # Check that the encoder_model_path is set to the custom encoder directory
+    run grep -A2 "encoder_model_path" ${TRITON_REPO_DIR}/tensorrt_llm/config.pbtxt 
     assert_success
     assert_output --partial "string_value: \"${EXPECTED_ENCODER_DIR}\""
 }
