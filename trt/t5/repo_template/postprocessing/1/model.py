@@ -36,11 +36,12 @@ class TritonPythonModel:
     that is created must have "TritonPythonModel" as the class name.
     """
 
-    def initialize(self, args):
+    def initialize(self, args) -> None:
         """`initialize` is called only once when the model is being loaded.
         Implementing `initialize` function is optional. This function allows
         the model to initialize any state associated with this model.
-        Parameters
+
+        Parameters.
         ----------
         args : dict
           Both keys and values are strings. The dictionary keys and values are:
@@ -52,46 +53,41 @@ class TritonPythonModel:
           * model_name: Model name
         """
         # Parse model configs
-        model_config = json.loads(args['model_config'])
-        tokenizer_dir = model_config['parameters']['tokenizer_dir'][
-            'string_value']
+        model_config = json.loads(args["model_config"])
+        tokenizer_dir = model_config["parameters"]["tokenizer_dir"]["string_value"]
 
-        skip_special_tokens = model_config['parameters'].get(
-            'skip_special_tokens')
+        skip_special_tokens = model_config["parameters"].get("skip_special_tokens")
         if skip_special_tokens is not None:
-            skip_special_tokens_str = skip_special_tokens[
-                'string_value'].lower()
+            skip_special_tokens_str = skip_special_tokens["string_value"].lower()
             if skip_special_tokens_str in [
-                    'true', 'false', '1', '0', 't', 'f', 'y', 'n', 'yes', 'no'
+                "true",
+                "false",
+                "1",
+                "0",
+                "t",
+                "f",
+                "y",
+                "n",
+                "yes",
+                "no",
             ]:
-                self.skip_special_tokens = skip_special_tokens_str in [
-                    'true', '1', 't', 'y', 'yes'
-                ]
+                self.skip_special_tokens = skip_special_tokens_str in ["true", "1", "t", "y", "yes"]
             else:
-                print(
-                    f"[TensorRT-LLM][WARNING] Don't setup 'skip_special_tokens' correctly (set value is {skip_special_tokens['string_value']}). Set it as True by default."
-                )
                 self.skip_special_tokens = True
         else:
-            print(
-                f"[TensorRT-LLM][WARNING] Don't setup 'skip_special_tokens'. Set it as True by default."
-            )
             self.skip_special_tokens = True
 
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir,
-                                                       legacy=False,
-                                                       padding_side='left',
-                                                       trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_dir, legacy=False, padding_side="left", trust_remote_code=True
+        )
         if not self.tokenizer.pad_token:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # Parse model output configs
-        output_config = pb_utils.get_output_config_by_name(
-            model_config, "OUTPUT")
+        output_config = pb_utils.get_output_config_by_name(model_config, "OUTPUT")
 
         # Convert Triton types to numpy types
-        self.output_dtype = pb_utils.triton_string_to_numpy(
-            output_config['data_type'])
+        self.output_dtype = pb_utils.triton_string_to_numpy(output_config["data_type"])
 
     def execute(self, requests):
         """`execute` must be implemented in every Python model. `execute`
@@ -102,10 +98,12 @@ class TritonPythonModel:
         Python model, must create one pb_utils.InferenceResponse for every
         pb_utils.InferenceRequest in `requests`. If there is an error, you can
         set the error argument when creating a pb_utils.InferenceResponse.
-        Parameters
+
+        Parameters.
         ----------
         requests : list
           A list of pb_utils.InferenceRequest
+
         Returns
         -------
         list
@@ -138,20 +136,20 @@ class TritonPythonModel:
             req_idx_offsets.append(req_idx_offset)
 
         all_outputs = self.tokenizer.batch_decode(
-            list_of_tokens, skip_special_tokens=self.skip_special_tokens)
+            list_of_tokens, skip_special_tokens=self.skip_special_tokens
+        )
 
         # construct responses
         responses = []
         for idx, request in enumerate(requests):
             req_outputs = [
-                x.encode('utf8')
-                for x in all_outputs[req_idx_offsets[idx]:req_idx_offsets[idx +
-                                                                          1]]
+                x.encode("utf8")
+                for x in all_outputs[req_idx_offsets[idx] : req_idx_offsets[idx + 1]]
             ]
 
             output_tensor = pb_utils.Tensor(
-                'OUTPUT',
-                np.array(req_outputs).astype(self.output_dtype))
+                "OUTPUT", np.array(req_outputs).astype(self.output_dtype)
+            )
 
             outputs = [output_tensor]
 
@@ -162,16 +160,14 @@ class TritonPythonModel:
             #
             # pb_utils.InferenceResponse(
             #    output_tensors=..., TritonError("An error occurred"))
-            inference_response = pb_utils.InferenceResponse(
-                output_tensors=outputs)
+            inference_response = pb_utils.InferenceResponse(output_tensors=outputs)
             responses.append(inference_response)
         # You should return a list of pb_utils.InferenceResponse. Length
         # of this list must match the length of `requests` list.
         return responses
 
-    def finalize(self):
+    def finalize(self) -> None:
         """`finalize` is called only once when the model is being unloaded.
         Implementing `finalize` function is optional. This function allows
         the model to perform any necessary clean ups before exit.
         """
-        print('Cleaning up...')

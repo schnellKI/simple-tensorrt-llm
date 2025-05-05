@@ -249,3 +249,13 @@ if [ -n "${CUSTOM_TOKENIZER_DIR:-}" ]; then
 fi
 echo "$build_cmd"
 echo "This will create a Triton repository at: ${TRITON_REPO_DIR}"
+
+build_triton_repo() {
+    # Execute the build_triton_repo.sh command to create the Triton repository
+    echo "Executing Triton repository build command..."
+    $build_cmd
+    echo "Triton repository build complete."
+}
+
+# Execute the build_triton_repo function
+build_triton_repo

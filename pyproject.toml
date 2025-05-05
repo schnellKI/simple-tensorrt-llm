@@ -132,12 +132,16 @@ concurrency = ["gevent", "multiprocessing", "thread"]
 # =================
 # = Project Setup =
 # =================
-
+[tool.setuptools]
+packages = []
 [project]
 name = "trt" # TODO: Replace with your actual project name
 version = "0.1.0" # TODO: Replace with your actual project version
 dependencies = [
     # Add your main project dependencies here
+    "transformers",
+    "torch",
+    
 ]
 
 [project.optional-dependencies]

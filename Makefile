@@ -6,7 +6,8 @@ venv: $(VENV_DIR)/pyvenv.cfg
 
 $(VENV_DIR)/pyvenv.cfg:
 	@echo "Creating virtual environment in $(VENV_DIR)..."
-	uv venv $(VENV_DIR)
+	uv venv $(VENV_DIR)  --python 3.11
+
 	@# We touch the pyvenv.cfg file only after uv venv succeeds
 
 install-dev: venv
